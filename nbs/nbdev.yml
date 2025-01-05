@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "wardbuddy"
+  site-url: "https://Dyadd.github.io/wardbuddy"
+  description: "Making placement learning fun and effective for medical students with a personalised AI system"
+  repo-branch: main
+  repo-url: "https://github.com/Dyadd/wardbuddy"
