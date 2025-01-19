@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from dotenv import load_dotenv
 from .learning_context import LearningContext, setup_logger
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -91,6 +92,44 @@ class ClinicalTutor:
             except Exception as e:
                 logger.error(f"Error in API call: {str(e)}")
                 raise
+
+    async def _get_completion(self, messages: List[Dict], temperature: float = 0.7) -> str:
+        """Get completion from OpenRouter API.
+        
+        Args:
+            messages: List of conversation messages
+            temperature: Temperature for response generation
+            
+        Returns:
+            str: Model response
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:7860",  # Required by OpenRouter
+        }
+        
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.api_url,
+                    headers=headers,
+                    json=data,
+                    timeout=30
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    return result["choices"][0]["message"]["content"]
+        except Exception as e:
+            logger.error(f"Error in API call: {str(e)}")
+            raise
+
     
     def _build_system_prompt(self) -> str:
         """
