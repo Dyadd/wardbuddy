@@ -1,0 +1,18 @@
+# Core Python dependencies
+aiohttp
+python-dotenv
+gradio
+pandas
+pathlib
+
+# Logging and utilities
+
+jsonschema
+typing-extensions
+
+# Development and testing (optional)
+# pytest
+# mypy
+
+# API and LLM interaction
+# OpenRouter API is used, but no specific library needed beyond aiohttp
