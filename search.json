@@ -1,0 +1,142 @@
+[
+  {
+    "objectID": "learning_context.html#learning-context-management",
+    "href": "learning_context.html#learning-context-management",
+    "title": "Learning Context",
+    "section": "Learning Context Management",
+    "text": "Learning Context Management\n\nCore module for managing student learning context and history\n\nThe system needs to track and handle student information for personalised education.\nThis module handles: * Tracking learning objectives * Managing case history * Monitoring knowledge gaps * Customizing feedback preferences\nand finally: * Context persistence\n\nsource\n\nCategoryProgress\n\n CategoryProgress (category:__main__.LearningCategory,\n                   completed_goals:List[__main__.SmartGoal]=&lt;factory&gt;,\n                   total_goals:int=0)\n\nProgress tracking for a category\n\nsource\n\n\nSmartGoal\n\n SmartGoal (id:str, category:__main__.LearningCategory,\n            original_input:str, smart_version:str, specialty:str,\n            setting:str, created_at:datetime.datetime,\n            completed_at:Optional[datetime.datetime]=None)\n\nSMART learning goal\n\nsource\n\n\nRotationContext\n\n RotationContext (specialty:str, setting:str)\n\nClinical rotation context\n\nsource\n\n\nLearningCategory\n\n LearningCategory (value, names=None, module=None, qualname=None,\n                   type=None, start=1)\n\nMain learning categories\n\nsource\n\n\nLearningContext\n\n LearningContext (context_path:Optional[pathlib.Path]=None)\n\n*Manages learning context and goal tracking.\nThis class handles: - Rotation context management - SMART goal tracking - Progress monitoring by category - Context persistence*",
+    "crumbs": [
+      "Learning Context"
+    ]
+  },
+  {
+    "objectID": "learning_context.html#tests",
+    "href": "learning_context.html#tests",
+    "title": "Learning Context",
+    "section": "Tests",
+    "text": "Tests",
+    "crumbs": [
+      "Learning Context"
+    ]
+  },
+  {
+    "objectID": "learning_interface.html#learning-interface",
+    "href": "learning_interface.html#learning-interface",
+    "title": "Learning Interface",
+    "section": "Learning Interface",
+    "text": "Learning Interface\n\nsource\n\ncreate_css\n\n create_css ()\n\nCreate custom CSS for interface styling with auth and mobile support.\nThis module provides the user interface for the clinical learning system, including: * Case presentation and feedback * Learning preference configuration * Session management * Progress visualization\n\nsource\n\n\nLearningInterface\n\n LearningInterface (context_path:Optional[pathlib.Path]=None,\n                    model:str='anthropic/claude-3.5-sonnet',\n                    api_url:Optional[str]=None)\n\n*Gradio interface for clinical learning system.\nFeatures: - Context selection - Goal management - Case discussion with streaming - Progress tracking*",
+    "crumbs": [
+      "Learning Interface"
+    ]
+  },
+  {
+    "objectID": "learning_interface.html#tests",
+    "href": "learning_interface.html#tests",
+    "title": "Learning Interface",
+    "section": "Tests",
+    "text": "Tests",
+    "crumbs": [
+      "Learning Interface"
+    ]
+  },
+  {
+    "objectID": "main.html",
+    "href": "main.html",
+    "title": "wardbuddy",
+    "section": "",
+    "text": "source\n\nrun_app\n\n run_app ()\n\nEntry point for command line.\n\nsource\n\n\nlaunch\n\n launch (port:int=&lt;typer.models.OptionInfo object at 0x7fa57d915660&gt;,\n         context_path:Optional[pathlib.Path]=&lt;typer.models.OptionInfo\n         object at 0x7fa57d915690&gt;, model:str=&lt;typer.models.OptionInfo\n         object at 0x7fa57d9156c0&gt;, share:bool=&lt;typer.models.OptionInfo\n         object at 0x7fa57d9156f0&gt;)\n\nLaunch the clinical learning interface.",
+    "crumbs": [
+      "main.html"
+    ]
+  },
+  {
+    "objectID": "auth.html",
+    "href": "auth.html",
+    "title": "User authentication and session management",
+    "section": "",
+    "text": "source\n\nAuthManager\n\n AuthManager (api_url:Optional[str]=None)\n\nManages user authentication and session tracking.\n\n\nTests",
+    "crumbs": [
+      "User authentication and session management"
+    ]
+  },
+  {
+    "objectID": "utils.html#utilities",
+    "href": "utils.html#utilities",
+    "title": "Utils",
+    "section": "Utilities",
+    "text": "Utilities\n\nsource\n\nsetup_logger\n\n setup_logger (name:str)\n\nSet up module logger with consistent formatting\n\nsource\n\n\nload_context_safely\n\n load_context_safely (path:pathlib.Path)\n\n*Safely load learning context from JSON file.\nArgs: path: Path to context file\nReturns: dict: Loaded context data\nRaises: ValueError: If file is invalid or inaccessible*\n\nsource\n\n\nsave_context_safely\n\n save_context_safely (context:Dict, path:pathlib.Path)\n\n*Safely save learning context to JSON file.\nArgs: context: Context data to save path: Path to save file\nRaises: ValueError: If save operation fails*",
+    "crumbs": [
+      "Utils"
+    ]
+  },
+  {
+    "objectID": "utils.html#tests",
+    "href": "utils.html#tests",
+    "title": "Utils",
+    "section": "Tests",
+    "text": "Tests\n\ndef test_utils():\n    \"\"\"Test utility functions\"\"\"\n    # Test logger setup\n    test_logger = setup_logger(\"test\")\n    assert test_logger.level == logging.INFO\n    assert len(test_logger.handlers) == 1\n    \n    # Test context loading/saving\n    test_path = Path(\"test_context.json\")\n    test_data = {\n        \"current_rotation\": {\"specialty\": \"ED\"},\n        \"learning_objectives\": [],\n        \"knowledge_profile\": {\"gaps\": {}, \"strengths\": []}\n    }\n    \n    # Test save\n    save_context_safely(test_data, test_path)\n    assert test_path.exists()\n    \n    # Test load\n    loaded = load_context_safely(test_path)\n    assert loaded == test_data\n    \n    # Cleanup\n    test_path.unlink()\n    \n    print(\"Utility tests passed!\")\n\n# Run tests\nif __name__ == \"__main__\":\n    test_utils()",
+    "crumbs": [
+      "Utils"
+    ]
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "wardbuddy",
+    "section": "",
+    "text": "This file will become your README and also the index of your documentation.",
+    "crumbs": [
+      "wardbuddy"
+    ]
+  },
+  {
+    "objectID": "index.html#developer-guide",
+    "href": "index.html#developer-guide",
+    "title": "wardbuddy",
+    "section": "Developer Guide",
+    "text": "Developer Guide\nIf you are new to using nbdev here are some useful pointers to get you started.\n\nInstall wardbuddy in Development mode\n# make sure wardbuddy package is installed in development mode\n$ pip install -e .\n\n# make changes under nbs/ directory\n# ...\n\n# compile to have changes apply to wardbuddy\n$ nbdev_prepare",
+    "crumbs": [
+      "wardbuddy"
+    ]
+  },
+  {
+    "objectID": "index.html#usage",
+    "href": "index.html#usage",
+    "title": "wardbuddy",
+    "section": "Usage",
+    "text": "Usage\n\nInstallation\nInstall latest from the GitHub repository:\n$ pip install git+https://github.com/Dyadd/wardbuddy.git\nor from conda\n$ conda install -c Dyadd wardbuddy\nor from pypi\n$ pip install wardbuddy\n\n\nDocumentation\nDocumentation can be found hosted on this GitHub repository’s pages. Additionally you can find package manager specific guidelines on conda and pypi respectively.",
+    "crumbs": [
+      "wardbuddy"
+    ]
+  },
+  {
+    "objectID": "index.html#how-to-use",
+    "href": "index.html#how-to-use",
+    "title": "wardbuddy",
+    "section": "How to use",
+    "text": "How to use\nFill me in please! Don’t forget code examples:\n\n1+1\n\n2",
+    "crumbs": [
+      "wardbuddy"
+    ]
+  },
+  {
+    "objectID": "clinical_tutor.html#adaptive-clinical-tutor",
+    "href": "clinical_tutor.html#adaptive-clinical-tutor",
+    "title": "Clinical Tutor",
+    "section": "Adaptive Clinical Tutor",
+    "text": "Adaptive Clinical Tutor\nThis module implements:\n\nEngages in natural case discussions like a clinical supervisor\nProvides context-aware feedback based on student’s rotation and preferences\nAnalyzes discussions to track learning progress\nIntegrates with the student’s learning context\n\nThe tutor aims to mimic real-world clinical teaching interactions where students present cases and receive feedback in a natural conversational style.\n\nsource\n\nOpenRouterException\nCustom exception for OpenRouter API errors\n\nsource\n\n\nClinicalTutor\n\n ClinicalTutor (context_path:Optional[pathlib.Path]=None,\n                model:str='anthropic/claude-3-sonnet',\n                api_key:Optional[str]=None)\n\n*Clinical teaching system using LLMs for goal setting and case discussion.\nFeatures: - SMART goal generation - Case discussion - Progress tracking*",
+    "crumbs": [
+      "Clinical Tutor"
+    ]
+  },
+  {
+    "objectID": "clinical_tutor.html#tests",
+    "href": "clinical_tutor.html#tests",
+    "title": "Clinical Tutor",
+    "section": "Tests",
+    "text": "Tests",
+    "crumbs": [
+      "Clinical Tutor"
+    ]
+  }
+]

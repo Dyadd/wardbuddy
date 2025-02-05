@@ -1,0 +1,25 @@
+
+    .gr-button {
+        border-radius: 8px;
+        padding: 10px 20px;
+    }
+    
+    .gr-button:hover {
+        background-color: #2c5282;
+        color: white;
+    }
+    
+    .message {
+        padding: 15px;
+        border-radius: 10px;
+        margin: 5px 0;
+    }
+    
+    .user-message {
+        background-color: #e2e8f0;
+    }
+    
+    .assistant-message {
+        background-color: #ebf8ff;
+    }
+    
