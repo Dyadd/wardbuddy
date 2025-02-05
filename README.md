@@ -1,5 +1,5 @@
 ---
-title: wardbuddy-test
+title: wardbuddy
 app_file: app.py
 sdk: gradio
 sdk_version: 5.12.0

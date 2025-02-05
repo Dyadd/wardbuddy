@@ -6,17 +6,19 @@
 __all__ = ['logger', 'OpenRouterException', 'ClinicalTutor']
 
 # %% ../nbs/01_clinical_tutor.ipynb 4
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Tuple, Any, AsyncGenerator
 import os
 import json
 import logging
-from pathlib import Path
+import asyncio
+import uuid
 from datetime import datetime
-from dotenv import load_dotenv
+from pathlib import Path
 import aiohttp
-import re
-from collections import defaultdict
-from .learning_context import LearningContext, setup_logger
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from .learning_context import LearningContext, setup_logger, LearningCategory, SmartGoal, RotationContext
+
 
 # Load environment variables
 load_dotenv()
@@ -31,51 +33,42 @@ class OpenRouterException(Exception):
 # %% ../nbs/01_clinical_tutor.ipynb 8
 class ClinicalTutor:
     """
-    Adaptive clinical teaching module that provides context-aware feedback.
+    Clinical teaching system using LLMs for goal setting and case discussion.
     
-    The tutor acts as an experienced clinical supervisor, engaging in natural
-    case discussions while tracking student progress and adapting feedback
-    based on learning context.
-    
-    Attributes:
-        learning_context (LearningContext): Student's learning context
-        model (str): LLM model identifier
-        api_url (str): OpenRouter API endpoint
+    Features:
+    - SMART goal generation
+    - Case discussion
+    - Progress tracking
     """
     
     def __init__(
         self,
         context_path: Optional[Path] = None,
-        model: str = "anthropic/claude-3.5-sonnet"
+        model: str = "anthropic/claude-3-sonnet",
+        api_key: Optional[str] = None
     ):
         """
         Initialize clinical tutor.
         
         Args:
-            context_path: Optional path for context persistence
-            model: Model identifier for OpenRouter
+            context_path: Path for context persistence
+            model: OpenRouter model identifier
+            api_key: OpenRouter API key (falls back to env var)
         """
-        self.api_key: str = os.getenv("OPENROUTER_API_KEY")
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not self.api_key:
-            raise ValueError("OpenRouter API key not found")
-        
-        self.api_url: str = "https://openrouter.ai/api/v1/chat/completions"
-        self.model: str = model
+            raise ValueError("OpenRouter API key required")
+            
+        self.api_url = "https://openrouter.ai/api/v1/chat/completions"
+        self.model = model
         
         self.learning_context = LearningContext(context_path)
-        self.context_path = context_path
         
-        # Track conversation state
-        self.current_case: Dict = {
-            "started": None,
-            "chief_complaint": None,
-            "key_findings": [],
-            "assessment": None,
-            "plan": None
-        }
-        
-        logger.info(f"Clinical tutor initialized with model: {model}")
+        # Track current discussion
+        self.current_discussion: List[Dict[str, str]] = []
     
+        logger.info("Clinical tutor initialized")
+
     async def _get_completion(
         self,
         messages: List[Dict],
@@ -126,107 +119,230 @@ class ClinicalTutor:
                 if attempt == max_retries - 1:
                     raise OpenRouterException(f"API call failed: {str(e)}")
                 logger.warning(f"Retry {attempt + 1} after error: {str(e)}")
-                # Could add exponential backoff here if needed
+                await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
     
-    def _build_discussion_prompt(self) -> str:
-        """Build context-aware prompt for case discussion."""
-        rotation = self.learning_context.current_rotation
-        active_preferences = [
-            p["focus"] for p in self.learning_context.feedback_preferences 
-            if p["active"]
-        ]
-        
-        significant_gaps = {
-            topic: score for topic, score 
-            in self.learning_context.knowledge_profile["gaps"].items()
-            if score < 0.7  # Only include significant gaps
-        }
-        
-        prompt = f"""You are an experienced clinical supervisor in {rotation['specialty']}. Act as an engaging and conversational tutor who coaches towards deeper understanding through Socratic dialogue and targeted questions.
-
-        Key Principles:
-        1. Assume I have strong foundational knowledge in medicine, clinical reasoning, and pre-medical sciences
-        2. Focus on high-level connections and nuanced clinical decision-making
-        3. Use targeted questions to explore my thought process and highlight key learning points
-        4. Share relevant clinical pearls and real-world applications
-        5. Be conversational and engaging, avoiding lecture-style responses
-        
-        Current Rotation Focus Areas:
-        {', '.join(rotation['key_focus_areas'])}
-
-        Areas for Deep Dive:
-        {', '.join(f'{topic} (confidence: {score:.1f})' for topic, score in significant_gaps.items()) if significant_gaps else 'General clinical reasoning'}
-
-        Student's Interests:
-        {', '.join(active_preferences) if active_preferences else 'Broad clinical discussion'}
-
-        Ask probing questions that explore clinical reasoning and highlight important connections. I will ask for clarification 
-        if concepts need more explanation."""
-
-        return prompt
-    
-    def _build_analysis_prompt(self, conversation: List[Dict[str, str]]) -> str:
+    async def generate_smart_goals(
+        self,
+        specialty: str,
+        setting: str,
+        num_goals: int = 3
+    ) -> List[SmartGoal]:
         """
-        Build prompt for post-discussion analysis.
+        Generate SMART goals for rotation context.
         
         Args:
-            conversation: List of message dictionaries with roles and content
+            specialty: Medical specialty
+            setting: Clinical setting
+            num_goals: Number of goals to generate
             
         Returns:
-            str: Analysis prompt
+            list: Generated SMART goals
         """
-        # Extract case details
-        case_content = ""
-        for msg in conversation:
-            if msg["role"] == "user":
-                case_content += msg["content"] + "\n"
-        
-        return f"""Analyze the following case discussion between a medical student and 
-        clinical supervisor. Focus on the student's demonstrated knowledge, skills, 
-        and areas for improvement.
-
-        Case Content:
-        {case_content}
-
-        Please identify:
-        1. Key clinical concepts and learning points demonstrated or discussed
-        2. Areas where the student showed uncertainty or knowledge gaps
-        3. Strengths demonstrated in clinical reasoning and presentation
-        4. Specific learning objectives that would help the student's development
-
-        Frame your response to help with ongoing learning:
-        - Start with positive observations
-        - Be specific about knowledge gaps
-        - Make concrete suggestions for improvement
-        - Connect to practical clinical scenarios"""
+        prompt = f"""Generate {num_goals} specific learning goals for a medical trainee in {specialty} ({setting}).
     
-    async def discuss_case(
-        self, 
-        message: str,
-        temperature: float = 0.7
-    ) -> str:
+    For each goal:
+    1. Select an appropriate category from: {', '.join(cat.value for cat in LearningCategory)}
+    2. Write a specific, measurable goal that builds clinical competence. Write the specific goal only for the next case discussion (i.e. it is not longitudinal across several cases). Also, this goal needs to be able to be evaluated by you - there is limited access to doctors to verify facts. 
+    
+    Format as JSON array with fields:
+    - category: Learning category name
+    - smart_version: SMART formatted goal text
+    
+    For example:
+    [
+      {{
+        "category": "Clinical Reasoning",
+        "smart_version": "Identify a comprehensive list of differential diagnoses for a patient with acute shortness of breath."
+      }},
+      {{
+        "category": "Management",
+        "smart_version": "Outline a detailed management plan for a patient with heart failure."
+      }}
+    ]
+    
+    Goals should be specific to the {setting} setting in {specialty}."""
+    
+        try:
+            response = await self._get_completion([{
+                "role": "system",
+                "content": prompt
+            }])
+            
+            # Parse response to extract goals
+            goals_data = json.loads(response)
+            
+            # Convert to SmartGoal objects
+            goals = []
+            for data in goals_data:
+                goal = SmartGoal(
+                    id=f"goal_{uuid.uuid4()}",
+                    category=LearningCategory(data["category"]),
+                    original_input="",  # Auto-generated
+                    smart_version=data["smart_version"],
+                    specialty=specialty,
+                    setting=setting,
+                    created_at=datetime.now()
+                )
+                goals.append(goal)
+            
+            logger.info(f"Generated {len(goals)} SMART goals")
+            return goals
+            
+        except Exception as e:
+            logger.error(f"Error generating goals: {str(e)}")
+            # Instead of returning empty list, generate some default goals
+            default_goals = [
+                SmartGoal(
+                    id=f"goal_{uuid.uuid4()}",
+                    category=LearningCategory.CLINICAL_REASONING,
+                    original_input="",
+                    smart_version=f"Develop systematic approach to common {specialty} presentations in {setting} setting",
+                    specialty=specialty,
+                    setting=setting,
+                    created_at=datetime.now()
+                ),
+                SmartGoal(
+                    id=f"goal_{uuid.uuid4()}",
+                    category=LearningCategory.MANAGEMENT,
+                    original_input="",
+                    smart_version=f"Create evidence-based management plans for basic {specialty} conditions",
+                    specialty=specialty,
+                    setting=setting,
+                    created_at=datetime.now()
+                )
+            ]
+            return default_goals
+        
+    async def generate_smart_goal(
+        self,
+        user_input: str,
+        specialty: str,
+        setting: str
+    ) -> Optional[SmartGoal]:
         """
-        Natural case discussion with context-aware responses.
+        Generate SMART goal from user input.
         
         Args:
-            message: Student's input message
-            temperature: Temperature for response generation
+            user_input: User's goal description
+            specialty: Current specialty
+            setting: Current setting
             
         Returns:
-            str: Clinical supervisor's response
+            SmartGoal: Generated SMART goal
+        """
+        prompt = f"""Convert this learning goal into a more specific goal (Specific, Measurable, Achievable, Relevant) for a patient in {specialty} ({setting}):
+
+"{user_input}"
+
+1. Select the most appropriate category from: {', '.join(cat.value for cat in LearningCategory)}
+2. Rewrite as a specific goal specific to {setting} in {specialty}
+
+Format as JSON with fields:
+- category: Learning category name
+- smart_version: SMART formatted goal text"""
+
+        try:
+            response = await self._get_completion([{
+                "role": "system",
+                "content": prompt
+            }])
+            
+            # Parse response
+            data = json.loads(response)
+            
+            return SmartGoal(
+                id=f"goal_{uuid.uuid4()}",
+                category=LearningCategory(data["category"]),
+                original_input=user_input,
+                smart_version=data["smart_version"],
+                specialty=specialty,
+                setting=setting,
+                created_at=datetime.now()
+            )
+            
+        except Exception as e:
+            logger.error(f"Error generating SMART goal: {str(e)}")
+            return None
+
+    async def _get_completion_stream(
+            self,
+            messages: List[Dict],
+            temperature: float = 0.7,
+            max_retries: int = 3
+        ) -> AsyncGenerator[str, None]:
+            """
+            Get streaming completion from OpenRouter API with retry logic.
+            
+            Args:
+                messages: Conversation messages
+                temperature: Response temperature
+                max_retries: Maximum retry attempts
+                
+            Yields:
+                str: Response tokens as they arrive
+            """
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:7860"
+            }
+            
+            data = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": 2000,
+                "stream": True  # Enable streaming
+            }
+            
+            for attempt in range(max_retries):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            self.api_url,
+                            headers=headers,
+                            json=data,
+                            timeout=30
+                        ) as response:
+                            response.raise_for_status()
+                            
+                            # Process streaming response
+                            async for line in response.content:
+                                text = line.decode('utf-8').strip()
+                                if text.startswith('data: '):
+                                    try:
+                                        json_str = text[6:]  # Remove 'data: ' prefix
+                                        if json_str == '[DONE]':
+                                            break
+                                        
+                                        chunk = json.loads(json_str)
+                                        if token := chunk['choices'][0]['delta'].get('content'):
+                                            yield token
+                                            
+                                    except json.JSONDecodeError:
+                                        continue
+                                        
+                            return
+                            
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise OpenRouterException(f"API call failed: {str(e)}")
+                    logger.warning(f"Retry {attempt + 1} after error: {str(e)}")
+                    await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+    
+    async def discuss_case(self, message: str) -> AsyncGenerator[str, None]:
+        """
+        Process case discussion message with streaming response.
+        
+        Args:
+            message: User's message
+                
+        Yields:
+            str: Streamed tokens of tutor's response
         """
         try:
-            # Update case tracking
-            if not self.current_case["started"]:
-                self.current_case["started"] = datetime.now()
-                # Try to identify chief complaint from first message
-                cc_match = re.search(r"(\d+)\s*[yY][oO]\s*[MmFf]\s*with\s*([^.]*)", message)
-                if cc_match:
-                    self.current_case["chief_complaint"] = cc_match.group(2).strip()
-            
-            # Build system prompt
+            # Build conversation prompt
             system_prompt = self._build_discussion_prompt()
-            
             messages = [{
                 "role": "system",
                 "content": system_prompt
@@ -235,146 +351,59 @@ class ClinicalTutor:
                 "content": message
             }]
             
-            response = await self._get_completion(messages, temperature)
-            return response
-            
-        except Exception as e:
-            logger.error(f"Error in case discussion: {str(e)}")
-            return "I apologize, but I encountered an error. Please try presenting your case again."
-    
-    async def analyze_discussion(
-        self,
-        conversation: List[Dict[str, str]]
-    ) -> Dict[str, Any]:
-        """
-        Analyze completed case discussion for learning insights.
-        
-        Args:
-            conversation: List of message dictionaries with roles and content
-            
-        Returns:
-            dict: Analysis results containing:
-                - learning_points: List of key concepts learned
-                - gaps: Dict of identified knowledge gaps
-                - strengths: List of demonstrated strengths
-                - suggested_objectives: List of recommended learning goals
-        """
-        try:
-            # Reset case tracking
-            self.current_case = {
-                "started": None,
-                "chief_complaint": None,
-                "key_findings": [],
-                "assessment": None,
-                "plan": None
-            }
-            
-            # Get analysis from model
-            analysis_prompt = self._build_analysis_prompt(conversation)
-            messages = [{
-                "role": "system",
-                "content": analysis_prompt
-            }]
-            messages.extend(conversation)
-            
-            response = await self._get_completion(messages, temperature=0.3)
-            
-            # Parse insights
-            insights = self._parse_analysis(response)
-            
-            # Update learning context
-            self._update_context_from_analysis(insights)
-            
-            return insights
-            
-        except Exception as e:
-            logger.error(f"Error in discussion analysis: {str(e)}")
-            return {
-                "learning_points": [],
-                "gaps": {},
-                "strengths": [],
-                "suggested_objectives": []
-            }
-    
-    def _parse_analysis(self, response: str) -> Dict[str, Any]:
-        """
-        Parse analysis response into structured insights.
-        
-        Uses pattern matching and basic NLP to extract:
-        - Learning points (key concepts discussed)
-        - Knowledge gaps with confidence estimates
-        - Demonstrated strengths
-        - Suggested learning objectives
-        
-        Args:
-            response: Raw analysis response
-            
-        Returns:
-            dict: Structured analysis insights
-        """
-        insights = {
-            "learning_points": [],
-            "gaps": {},
-            "strengths": [],
-            "suggested_objectives": []
-        }
-        
-        try:
-            # Split into sections
-            sections = response.lower().split("\n\n")
-            
-            for section in sections:
-                if "learning point" in section or "key concept" in section:
-                    # Extract bullet points or numbered items
-                    points = re.findall(r"[-•*]\s*(.+)$", section, re.MULTILINE)
-                    insights["learning_points"].extend(points)
-                    
-                elif "gap" in section or "uncertainty" in section:
-                    # Look for topic mentions with confidence indicators
-                    gaps = re.findall(
-                        r"(limited|uncertain|unclear|difficulty with)\s+([^,.]+)", 
-                        section
-                    )
-                    for indicator, topic in gaps:
-                        # Estimate confidence based on language
-                        confidence = 0.4 if "limited" in indicator else 0.6
-                        insights["gaps"][topic.strip()] = confidence
-                        
-                elif "strength" in section or "demonstrated" in section:
-                    # Extract positive mentions
-                    strengths = re.findall(r"[-•*]\s*(.+)$", section, re.MULTILINE)
-                    insights["strengths"].extend(strengths)
-                    
-                elif "objective" in section or "suggest" in section:
-                    # Extract recommended objectives
-                    objectives = re.findall(r"[-•*]\s*(.+)$", section, re.MULTILINE)
-                    insights["suggested_objectives"].extend(objectives)
-            
-            return insights
-            
-        except Exception as e:
-            logger.error(f"Error parsing analysis: {str(e)}")
-            return insights
-    
-    def _update_context_from_analysis(self, insights: Dict[str, Any]) -> None:
-        """
-        Update learning context based on discussion analysis.
-        
-        Args:
-            insights: Dictionary of analysis insights
-        """
-        try:
-            # Update knowledge gaps
-            for topic, confidence in insights["gaps"].items():
-                self.learning_context.update_knowledge_gap(topic, confidence)
-            
-            # Add strengths
-            for strength in insights["strengths"]:
-                self.learning_context.add_strength(strength)
-            
-            # Save context if path provided
-            if self.context_path:
-                self.learning_context.save_context(self.context_path)
+            # Get streaming response
+            async for token in self._get_completion_stream(messages):
+                yield token
                 
         except Exception as e:
-            logger.error(f"Error updating context: {str(e)}")
+            logger.error(f"Error in discussion: {str(e)}")
+            yield "I apologize, but I encountered an error. Please try again."
+            
+    def end_discussion(self) -> None:
+        """End current discussion."""
+        if self.learning_context.active_goal:
+            self.learning_context.complete_active_goal()
+            
+        self.current_discussion = []
+    
+    def _build_discussion_prompt(self) -> str:
+        """Build context-aware discussion prompt."""
+        context = self.learning_context
+        rotation = context.rotation
+        active_goal = context.active_goal
+        
+        return f"""You are an experienced clinical supervisor in {rotation.specialty} 
+        working in a {rotation.setting} setting. Guide the learner through case discussion
+        using Socratic questioning and targeted feedback.
+
+        Current Learning Goal:
+        {active_goal.smart_version if active_goal else 'General clinical discussion'}
+
+        Approach:
+        1. Focus on clinical reasoning and decision-making
+        2. Ask targeted questions to explore understanding
+        3. Share relevant clinical pearls
+        4. Be conversational and engaging
+        5. Relate discussion to current learning goal where relevant
+
+        Remember: The learner has strong foundational knowledge. Focus on advanced clinical concepts
+        rather than basic science."""
+                
+    def get_discussion_history(self) -> List[Dict]:
+        """
+        Get current discussion history.
+        
+        Returns:
+            list: Discussion messages
+        """
+        return self.current_discussion
+    
+    def clear_discussion() -> Tuple[List, str, Dict]:
+        """Clear chat history."""
+        return [], "", {
+            "discussion_active": False,
+            "suggested_goals": [],
+            "discussion_start": None,
+            "last_message": None
+        }
+

@@ -4,6 +4,7 @@ python-dotenv
 gradio
 pandas
 pathlib
+huggingface_hub
 
 # Logging and utilities
 
